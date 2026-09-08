@@ -35,7 +35,7 @@ while IFS= read -r -d '' asm_file; do
     asm_objects+=("$obj_file")
 done < <(find . -path "./$BUILD_DIR" -prune \
     -o -path "./User" -prune \
-    -o \( -name "*.asm" -o -name "*.s" \) ! -name "boot.s" -print0)
+    -o \( -name "*.asm" -o -name "*.s" \) ! -name "boot.asm" -print0)
     
 
 c_objects=()

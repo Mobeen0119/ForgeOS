@@ -113,6 +113,46 @@ int waytation_drain(uint32_t conn_id)
     return drained;
 }
 
+int waystation_drain(uint32_t conn_id)
+{
+    if (!valid_id(conn_id))
+        return 0;
+
+    reset_if_stale(conn_id);
+
+    held_segment_t *row = slots[conn_id];
+    int drained = 0;
+
+    for (;;)
+    {
+        uint32_t expected = rapport_get_expected_seq(conn_id);
+        int found = -1;
+        for (int i = 0; i < WAYSTATION_MAX_PENDING; i++)
+        {
+            if (row[i].in_use && row[i].seq == expected)
+            {
+                found = i;
+                break;
+            }
+        }
+        if (found < 0)
+            break;
+
+        if (!inbox_deposit(conn_id, row[found].data, row[found].len))
+        {
+            kprintf("[Waystation] slot %u: Inbox has no room, seq %u stays held for now\n", conn_id, row[found].seq);
+            break;
+        }
+
+        rapport_advance_seq(conn_id, row[found].len);
+        kprintf("[Waystation] slot %u: gap closed, delivered seq %u (%u bytes)\n", conn_id, row[found].seq, row[found].len);
+
+        row[found].in_use = 0;
+        drained++;
+    }
+    return drained;
+}
+
 uint16_t waystation_receive_window(uint32_t conn_id)
 {
     if (!valid_id(conn_id))

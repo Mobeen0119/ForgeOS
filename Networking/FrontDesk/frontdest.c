@@ -14,6 +14,8 @@
 #include "../Landlord/landlord.h"
 #include "../Directory/directory.h"
 #include "../Audit/audit.h"
+#include "../Concierge6/concierge6.h"
+#include "../../kernel/Process/task.h"
 
 #define RTL8139_VENDOR_ID 0x10EC
 #define RTL8139_DEVICE_ID 0x8139
@@ -59,12 +61,15 @@ const frontdesk_state_t *frontdesk_get_state()
 void frontdesk_init(void)
 {
     memset(&state, 0, sizeof(state));
+    kprintf("[FrontDesk] checkpoint 1: scanning PCI for RTL8139\n");
     nic_pci = pci_find_device(RTL8139_VENDOR_ID, RTL8139_DEVICE_ID);
     if (!nic_pci.found)
     {
+        kprintf("[FrontDesk] checkpoint 2: not found on PCI bus\n");
         state.present = 0;
         return;
     }
+    kprintf("[FrontDesk] checkpoint 2: found on PCI bus, resetting\n");
 
     uint16_t io_base = (uint16_t)(nic_pci.bar0 & 0xFFFC);
 
@@ -80,8 +85,17 @@ void frontdesk_init(void)
 
     outb(io_base + REG_CMD, CMD_RESET);
 
+    uint32_t reset_deadline = get_ticks() + 200; // ~2s at the 100Hz this kernel runs PIT at
     while ((inb(io_base + REG_CMD) & CMD_RESET) != 0)
-        ;
+    {
+        if (get_ticks() > reset_deadline)
+        {
+            kprintf("[FrontDesk] checkpoint 3: NIC reset never completed, giving up on networking\n");
+            state.present = 0;
+            return;
+        }
+    }
+    kprintf("[FrontDesk] checkpoint 3: reset complete\n");
 
     for (int i = 0; i < 6; i++)
     {
@@ -135,20 +149,9 @@ void frontdesk_bringup(void)
         landlord_start(state.mac);
         directory_start();
 
-        uint8_t our_ip6[16] = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-        our_ip6[8] = state.mac[0] ^ 0x02;
-        our_ip6[9] = state.mac[1];
-        our_ip6[10] = state.mac[2];
-        our_ip6[11] = 0xFF;
-        our_ip6[12] = 0xFE;
-        our_ip6[13] = state.mac[3];
-        our_ip6[14] = state.mac[4];
-        our_ip6[15] = state.mac[5];
-
-        rolodex6_set_ip(our_ip6);
-        kprintf("[FrontDesk] IPv6 link-local self-assigned: fe80::%02x%02x:%02xff:fe%02x:%02x%02x (no DAD performed, no global address)\n",
-                our_ip6[8], our_ip6[9], our_ip6[10], our_ip6[13], our_ip6[14], our_ip6[15]);
+        kprintf("[FrontDesk] checkpoint 4: about to start IPv6 (SLAAC/DAD)\n");
+        concierge6_start(state.mac); // full SLAAC + DAD, driven to completion by concierge_maybe_tick()
+        kprintf("[FrontDesk] checkpoint 5: IPv6 bring-up kicked off, bringup() returning\n");
     }
     else
     {
@@ -189,7 +192,9 @@ void frontdesk_irq_handler(void)
 
     if (status & ISR_ROK)
     {
-        while (!(inb(io_base + REG_CMD) & CMD_BUFE))
+        
+        int guard = 0;
+        while (!(inb(io_base + REG_CMD) & CMD_BUFE) && guard++ < 256)
         {
 
             uint16_t packet_status = *(uint16_t *)(rx_buffer + rx_read_offset);

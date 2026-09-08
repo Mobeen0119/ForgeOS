@@ -7,7 +7,7 @@ CFLAGS = -m32 -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie
 ASMFLAGS = -f elf32
 LDFLAGS = -m elf_i386 -T linker.ld
 
-SRC_C := $(shell find kernel Drivers Lib -name '*.c' 2>/dev/null)
+SRC_C := $(shell find kernel Drivers Lib Networking -name '*.c' 2>/dev/null)
 SRC_NASM := $(shell find kernel Drivers boot -name '*.asm' 2>/dev/null)
 SRC_GAS := $(shell find kernel Drivers boot -name '*.s' -not -path 'boot/boot.s' 2>/dev/null)
 

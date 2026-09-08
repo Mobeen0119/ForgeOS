@@ -10,8 +10,10 @@
 #include "../Directory/directory.h"
 #include "../Rolodex6/rolodex6.h"
 #include "../Foyer6/foyer6.h"
-#include "../FrontDoor/frontdoor.h"
+#include "../Frontdoor6/frontdoor6.h"
 #include "../Rolodex/rolodex.h"
+#include "../Fragment6/fragment6.h"
+#include "../Concierge6/concierge6.h"
 
 #define CONCIERGE_TICK_DIVISOR 10
 
@@ -46,6 +48,11 @@ void concierge_tick(const uint8_t our_mac[6])
     uint8_t our_ip6[16];
     rolodex6_get_ip(our_ip6);
     foyer6_tick(our_mac, our_ip6);
+
+    fragment6_tick();
+
+    // drives the SLAAC/DAD state machine to completion, then keeps ticking
+    concierge6_tick(our_mac);
 }
 
 void concierge_maybe_tick(const uint8_t our_mac[6])
